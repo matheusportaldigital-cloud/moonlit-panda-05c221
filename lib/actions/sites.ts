@@ -27,6 +27,8 @@ const {
   data: { user },
 } = await supabase.auth.getUser();
 
+  if (!user) return { error: "Sessão expirada. Faça login novamente." };
+
 if (!user) return { error: "Sessão expirada. Faça login novamente." };
 
 const { data: debugAuth, error: debugError } = await supabase.rpc(
