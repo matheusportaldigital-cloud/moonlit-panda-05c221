@@ -8,8 +8,6 @@ export interface SiteFormState {
   success?: boolean;
 }
 
-// Cria um site de verdade no Postgres. Só retorna sucesso depois que o
-// banco confirma -- nunca antes (ver regra "contra perda de dados").
 export async function createSite(
   _prevState: SiteFormState,
   formData: FormData
@@ -41,33 +39,6 @@ export async function createSite(
   return {
     error: `DEBUG | user.id=${userId} | auth.uid=${debugAuth} | rpc_error=${debugError?.message ?? "none"}`,
   };
-
-  const { data, error } = await supabase
-    .from("sites")
-    .insert({
-      name,
-      description: description || null,
-      company_name: companyName || null,
-      created_by: userId,
-    })
-    .select("id")
-    .single();
-
-  if (error || !data) {
-    return {
-      error:
-        error?.message ?? "Não foi possível salvar. Tente novamente.",
-    };
-  }
-
-  await supabase.from("activity_logs").insert({
-    site_id: data.id,
-    user_id: userId,
-    action: "site_created",
-  });
-
-  revalidatePath("/dashboard");
-  return { success: true };
 }
 
 export async function deleteSite(siteId: string) {
