@@ -22,26 +22,25 @@ export async function createSite(
     return { error: "O nome do projeto é obrigatório." };
   }
 
-const supabase = createClient();
-const {
-  data: { user },
-} = await supabase.auth.getUser();
+  const supabase = createClient();
 
-  if (!user) return { error: "Sessão expirada. Faça login novamente." };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-if (!user) return { error: "Sessão expirada. Faça login novamente." };
+  const userId = user?.id;
 
-const { data: debugAuth, error: debugError } = await supabase.rpc(
-  "debug_auth_uid"
-);
-
-return {
-  error: `DEBUG | user.id=${user.id} | auth.uid=${debugAuth} | rpc_error=${debugError?.message ?? "none"}`,
-};
-
-  if (!user) {
+  if (!userId) {
     return { error: "Sessão expirada. Faça login novamente." };
   }
+
+  const { data: debugAuth, error: debugError } = await supabase.rpc(
+    "debug_auth_uid"
+  );
+
+  return {
+    error: `DEBUG | user.id=${userId} | auth.uid=${debugAuth} | rpc_error=${debugError?.message ?? "none"}`,
+  };
 
   const { data, error } = await supabase
     .from("sites")
@@ -49,18 +48,21 @@ return {
       name,
       description: description || null,
       company_name: companyName || null,
-      created_by: user.id,
+      created_by: userId,
     })
     .select("id")
     .single();
 
   if (error || !data) {
-    return { error: error?.message ?? "Não foi possível salvar. Tente novamente." };
+    return {
+      error:
+        error?.message ?? "Não foi possível salvar. Tente novamente.",
+    };
   }
 
   await supabase.from("activity_logs").insert({
     site_id: data.id,
-    user_id: user.id,
+    user_id: userId,
     action: "site_created",
   });
 
@@ -70,23 +72,32 @@ return {
 
 export async function deleteSite(siteId: string) {
   const supabase = createClient();
-  const { error } = await supabase.from("sites").delete().eq("id", siteId);
+
+  const { error } = await supabase
+    .from("sites")
+    .delete()
+    .eq("id", siteId);
+
   if (error) {
     return { error: "Não foi possível excluir o site." };
   }
+
   revalidatePath("/dashboard");
   return { success: true };
 }
 
 export async function toggleFavorite(siteId: string, next: boolean) {
   const supabase = createClient();
+
   const { error } = await supabase
     .from("sites")
     .update({ is_favorite: next })
     .eq("id", siteId);
+
   if (error) {
     return { error: "Não foi possível atualizar." };
   }
+
   revalidatePath("/dashboard");
   return { success: true };
 }
