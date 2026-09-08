@@ -43,7 +43,7 @@ export async function createSite(
     .single();
 
   if (error || !data) {
-    return { error: "Não foi possível salvar. Tente novamente." };
+    return { error: error?.message ?? "Não foi possível salvar. Tente novamente." };
   }
 
   await supabase.from("activity_logs").insert({
