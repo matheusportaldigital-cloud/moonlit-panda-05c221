@@ -22,10 +22,20 @@ export async function createSite(
     return { error: "O nome do projeto é obrigatório." };
   }
 
-  const supabase = createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+const supabase = createClient();
+const {
+  data: { user },
+} = await supabase.auth.getUser();
+
+if (!user) return { error: "Sessão expirada. Faça login novamente." };
+
+const { data: debugAuth, error: debugError } = await supabase.rpc(
+  "debug_auth_uid"
+);
+
+return {
+  error: `DEBUG | user.id=${user.id} | auth.uid=${debugAuth} | rpc_error=${debugError?.message ?? "none"}`,
+};
 
   if (!user) {
     return { error: "Sessão expirada. Faça login novamente." };
