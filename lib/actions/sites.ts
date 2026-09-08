@@ -8,8 +8,6 @@ export interface SiteFormState {
   success?: boolean;
 }
 
-// Cria um site de verdade no Postgres. Só retorna sucesso depois que o
-// banco confirma -- nunca antes (ver regra "contra perda de dados").
 export async function createSite(
   _prevState: SiteFormState,
   formData: FormData
@@ -19,52 +17,78 @@ export async function createSite(
   const companyName = String(formData.get("company_name") ?? "").trim();
 
   if (!name) {
-    return { error: "O nome do projeto é obrigatório." };
+    return {
+      error: "O nome do projeto é obrigatório.",
+    };
   }
 
+  const supabase = createClient();
+
+  // Confirma que existe uma sessão válida.
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    return {
+      error: "Sessão expirada. Faça login novamente.",
+    };
+  }
+
+  // Cria o site através da função segura do PostgreSQL.
+  // O próprio banco usa auth.uid() para definir o criador.
+  const { data: siteId, error: createError } = await supabase.rpc(
+    "create_site_secure",
+    {
+      p_name: name,
+      p_description: description || null,
+      p_company_name: companyName || null,
+    }
+  );
+
+  if (createError || !siteId) {
+    return {
+      error:
+        createError?.message ??
+        "Não foi possível criar o site. Tente novamente.",
+    };
+  }
+
+  // Registra a atividade depois que o site realmente foi criado.
+  const { error: activityError } = await supabase
+    .from("activity_logs")
+    .insert({
+      site_id: siteId,
+      user_id: user.id,
+      action: "site_created",
+    });
+
+  // O site já foi criado. Se apenas o log falhar, não fingimos
+  // que a criação falhou.
+  if (activityError) {
+    console.error("Erro ao registrar atividade:", activityError);
+  }
+
+  revalidatePath("/dashboard");
+
+  return {
+    success: true,
+  };
+}
+
+export async function deleteSite(siteId: string) {
   const supabase = createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const userId = user?.id;
-
-  if (!userId) {
-    return { error: "Sessão expirada. Faça login novamente." };
-  }
-
-  const { data, error } = await supabase
-    .from("sites")
-    .insert({
-      name,
-      description: description || null,
-      company_name: companyName || null,
-      created_by: userId,
-    })
-    .select("id")
-    .single();
-
-  if (error || !data) {
+  if (!user) {
     return {
-      error:
-        error?.message ?? "Não foi possível salvar. Tente novamente.",
+      error: "Sessão expirada. Faça login novamente.",
     };
   }
-
-  await supabase.from("activity_logs").insert({
-    site_id: data.id,
-    user_id: userId,
-    action: "site_created",
-  });
-
-  revalidatePath("/dashboard");
-
-  return { success: true };
-}
-
-export async function deleteSite(siteId: string) {
-  const supabase = createClient();
 
   const { error } = await supabase
     .from("sites")
@@ -72,27 +96,50 @@ export async function deleteSite(siteId: string) {
     .eq("id", siteId);
 
   if (error) {
-    return { error: "Não foi possível excluir o site." };
+    return {
+      error: "Não foi possível excluir o site.",
+    };
   }
 
   revalidatePath("/dashboard");
 
-  return { success: true };
+  return {
+    success: true,
+  };
 }
 
-export async function toggleFavorite(siteId: string, next: boolean) {
+export async function toggleFavorite(
+  siteId: string,
+  next: boolean
+) {
   const supabase = createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return {
+      error: "Sessão expirada. Faça login novamente.",
+    };
+  }
 
   const { error } = await supabase
     .from("sites")
-    .update({ is_favorite: next })
+    .update({
+      is_favorite: next,
+    })
     .eq("id", siteId);
 
   if (error) {
-    return { error: "Não foi possível atualizar." };
+    return {
+      error: "Não foi possível atualizar.",
+    };
   }
 
   revalidatePath("/dashboard");
 
-  return { success: true };
+  return {
+    success: true,
+  };
 }
