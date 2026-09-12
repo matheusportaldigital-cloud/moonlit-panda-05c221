@@ -24,38 +24,44 @@ export async function createSite(
 
   const supabase = createClient();
 
-  // Confirma que existe uma sessão válida.
   const {
     data: { user },
-    error: userError,
+    error: authError,
   } = await supabase.auth.getUser();
 
-  if (userError || !user) {
+  if (authError || !user) {
     return {
       error: "Sessão expirada. Faça login novamente.",
     };
   }
 
-  // Cria o site através da função segura do PostgreSQL.
-  // O próprio banco usa auth.uid() para definir o criador.
-  const { data: siteId, error: createError } = await supabase.rpc(
-    "create_site_secure",
-    {
-      p_name: name,
-      p_description: description || null,
-      p_company_name: companyName || null,
-    }
-  );
+  /*
+   * O banco possui uma função segura para criar o site.
+   *
+   * O "as any" aqui é somente para contornar o tipo Database antigo
+   * do projeto, que ainda não conhece a função RPC criada no Supabase.
+   * A segurança continua sendo feita pelo PostgreSQL.
+   */
+  const { data: siteId, error: createError } = await (
+    supabase as any
+  ).rpc("create_site_secure", {
+    p_name: name,
+    p_description: description || null,
+    p_company_name: companyName || null,
+  });
 
-  if (createError || !siteId) {
+  if (createError) {
     return {
-      error:
-        createError?.message ??
-        "Não foi possível criar o site. Tente novamente.",
+      error: createError.message,
     };
   }
 
-  // Registra a atividade depois que o site realmente foi criado.
+  if (!siteId) {
+    return {
+      error: "O site não foi criado pelo banco de dados.",
+    };
+  }
+
   const { error: activityError } = await supabase
     .from("activity_logs")
     .insert({
@@ -64,8 +70,6 @@ export async function createSite(
       action: "site_created",
     });
 
-  // O site já foi criado. Se apenas o log falhar, não fingimos
-  // que a criação falhou.
   if (activityError) {
     console.error("Erro ao registrar atividade:", activityError);
   }
@@ -79,16 +83,6 @@ export async function createSite(
 
 export async function deleteSite(siteId: string) {
   const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return {
-      error: "Sessão expirada. Faça login novamente.",
-    };
-  }
 
   const { error } = await supabase
     .from("sites")
@@ -113,16 +107,6 @@ export async function toggleFavorite(
   next: boolean
 ) {
   const supabase = createClient();
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return {
-      error: "Sessão expirada. Faça login novamente.",
-    };
-  }
 
   const { error } = await supabase
     .from("sites")
